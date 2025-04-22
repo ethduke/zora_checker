@@ -8,5 +8,6 @@ paths:
 
 settings:
   batch_size: 5
-  initial_retry_delay: 5
+  batch_rate_limit_delay: 5
+  max_request_timeout: 15
   max_persistent_retries_per_address: 50

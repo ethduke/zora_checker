@@ -14,19 +14,20 @@ async def fetch_zora_data(session, address, proxy_handler, query_template, max_r
     payload = {"query": query}
     headers = {"Content-Type": "application/json"}
     current_proxy_url = proxy_handler.get_initial_proxy()
-    retries = 0
+    retries = 0 
 
     while retries <= max_retries:
         proxy_display = proxy_handler.get_display_proxy(current_proxy_url)
         try:
-            async with session.post(config.API_URL, json=payload, headers=headers, proxy=current_proxy_url, timeout=aiohttp.ClientTimeout(total=45)) as response:
+            # Use configured timeout
+            timeout_config = aiohttp.ClientTimeout(total=config.MAX_REQUEST_TIMEOUT)
+            async with session.post(config.API_URL, json=payload, headers=headers, proxy=current_proxy_url, timeout=timeout_config) as response:
                 status = response.status
                 response_text = await response.text()
 
                 is_rate_limited = (status == 429 or "Ratelimit exceeded please try again after" in response_text)
 
                 if is_rate_limited:
-                    # Don't retry internally, signal for batch retry
                     logging.warning(f"Rate Limit Detected (Status {status}) for {address} using {proxy_display}. Will retry at batch level.")
                     return {"address": address, "error": "RATE_LIMITED", "status": status, "last_proxy": proxy_display}
 
@@ -38,7 +39,6 @@ async def fetch_zora_data(session, address, proxy_handler, query_template, max_r
                             logging.info(f"Success: Address: {address}, Proxy: {proxy_display}, Tokens: {token_amount_str}")
                             return {"address": address, "data": data}
                         elif "errors" in data:
-                            # GraphQL errors are now treated as final for this attempt
                             logging.warning(f"GraphQL Error (Status 200) for {address} using {proxy_display}: {data['errors']}, Response: {response_text[:100]}...")
                             return {"address": address, "error": f"GraphQL Error: {data['errors']}", "status": status, "last_proxy": proxy_display}
                         else:
@@ -48,23 +48,13 @@ async def fetch_zora_data(session, address, proxy_handler, query_template, max_r
                         logging.error(f"JSON Decode Error for {address} using {proxy_display}: {json_e}, Response text: {response_text[:100]}...")
                         return {"address": address, "error": f"JSON Decode Error: {json_e}", "status": status, "last_proxy": proxy_display}
                 else:
-                    # Handle other non-200, non-rate-limit HTTP errors
                     logging.error(f"HTTP Error for {address} using {proxy_display}: Status {status}, Response: {response_text[:100]}...")
                     return {"address": address, "error": f"HTTP Status {status}", "status": status, "last_proxy": proxy_display}
 
         except asyncio.TimeoutError:
-            logging.warning(f"Timeout Error for {address} using {proxy_display}")
-            retries += 1
-            if retries <= max_retries:
-                wait_time = random.uniform(1, 2)
-                logging.info(f"Timeout for {address}. Retrying ({retries}/{max_retries}) in {wait_time:.2f}s...")
-                await asyncio.sleep(wait_time)
-                # Get new proxy on timeout retry
-                current_proxy_url = proxy_handler.get_new_random_proxy(current_proxy_url) 
-                continue
-            else:
-                logging.error(f"Timeout Max Retries Exceeded for address {address}")
-                return {"address": address, "error": "Timeout Max Retries Exceeded", "last_proxy": proxy_display}
+            logging.error(f"Timeout Error for {address} using {proxy_display} after {config.MAX_REQUEST_TIMEOUT}s")
+            return {"address": address, "error": f"Timeout Error ({config.MAX_REQUEST_TIMEOUT}s)", "last_proxy": proxy_display}
+
         except aiohttp.ClientProxyConnectionError as proxy_e:
             logging.warning(f"Proxy Connection Error for {address} using {proxy_display}: {proxy_e}")
             retries += 1
@@ -78,7 +68,7 @@ async def fetch_zora_data(session, address, proxy_handler, query_template, max_r
                 continue
             else:
                 logging.error(f"Proxy Connection Error Max Retries Exceeded for address {address}")
-                return {"address": address, "error": f"Proxy Connection Error: {proxy_e}", "last_proxy": proxy_display}
+                return {"address": address, "error": f"Proxy Connection Error Max Retries: {proxy_e}", "last_proxy": proxy_display}
         except aiohttp.ClientError as client_e:
             logging.error(f"Client Error for {address} using {proxy_display}: {client_e}")
             return {"address": address, "error": f"Client Error: {client_e}", "last_proxy": proxy_display}
@@ -86,8 +76,8 @@ async def fetch_zora_data(session, address, proxy_handler, query_template, max_r
             logging.exception(f"Generic Request Failed for {address} using {proxy_display}")
             return {"address": address, "error": f"Unknown Error: {type(e).__name__}", "last_proxy": proxy_display}
 
-    logging.error(f"Max retries loop ended unexpectedly for {address} (likely within fetch_zora_data)")
-    return {"address": address, "error": "Max retries loop ended unexpectedly", "last_proxy": proxy_display}
+    logging.error(f"Max retries loop ended unexpectedly for {address} (likely proxy errors)")
+    return {"address": address, "error": "Max retries loop ended unexpectedly (Proxy)", "last_proxy": proxy_display}
 
 
 async def process_results(all_results, output_json_file):
@@ -146,7 +136,7 @@ async def process_results(all_results, output_json_file):
         logging.exception(f"Error saving results to {output_json_file}: {e}")
 
 
-async def process_single_batch(session, batch_addresses, proxy_handler, query_template, batch_number, total_batches, initial_retry_delay, max_persistent_retries_per_address):
+async def process_single_batch(session, batch_addresses, proxy_handler, query_template, batch_number, total_batches, batch_rate_limit_delay, max_persistent_retries_per_address):
     """Processes a single batch of addresses, including initial fetch and persistent retries for rate limits."""
     logging.info(f"Processing Batch {batch_number}/{total_batches} (Addresses {batch_addresses[0]}...{batch_addresses[-1]}) - Size: {len(batch_addresses)}...")
 
@@ -157,7 +147,7 @@ async def process_single_batch(session, batch_addresses, proxy_handler, query_te
     while addresses_to_retry and current_persistent_retry_attempt <= max_persistent_retries_per_address:
         if current_persistent_retry_attempt > 0:
             # It's a retry attempt
-            wait_time = initial_retry_delay * current_persistent_retry_attempt
+            wait_time = random.uniform(1, batch_rate_limit_delay)
             logging.warning(f"Batch {batch_number}: Rate limit hit for {len(addresses_to_retry)} address(es). Retrying (Attempt {current_persistent_retry_attempt}/{max_persistent_retries_per_address}) in {wait_time:.2f} seconds...")
             await asyncio.sleep(wait_time)
 
@@ -180,7 +170,6 @@ async def process_single_batch(session, batch_addresses, proxy_handler, query_te
                 final_batch_results[address] = {"address": address, "error": f"Task Exception: {result}"}
             elif isinstance(result, dict):
                 if result.get("error") == "RATE_LIMITED":
-                    # Still rate limited, mark for next retry round if limit not reached
                     if current_persistent_retry_attempt < max_persistent_retries_per_address:
                          still_needs_retry.add(address)
                     else:
@@ -209,8 +198,8 @@ async def main():
     query_file = config.QUERY_FILE
     output_json_file = config.OUTPUT_JSON_FILE
     batch_size = config.BATCH_SIZE
-    initial_retry_delay = config.INITIAL_RETRY_DELAY
-    max_persistent_retries_per_address = config.MAX_PERSISTENT_RETRIES_PER_ADDRESS
+    batch_rate_limit_delay_config = config.BATCH_RATE_LIMIT_DELAY
+    max_persistent_retries_per_address_config = config.MAX_PERSISTENT_RETRIES_PER_ADDRESS
 
     query_template = config.read_file_content(query_file)
     if query_template is None:
@@ -232,6 +221,8 @@ async def main():
     logging.info(f"Using API URL: {api_url}")
     logging.info(f"Total addresses to process: {len(addresses)}")
     logging.info(f"Processing in batches of {batch_size}...")
+    logging.info(f"Request timeout per address: {config.MAX_REQUEST_TIMEOUT}s") # Log new setting
+    logging.info(f"Batch rate limit retry delay upper bound: {batch_rate_limit_delay_config}s") # Log renamed setting
 
     current_index = 0
     total_batches = (len(addresses) + batch_size - 1) // batch_size
@@ -248,8 +239,8 @@ async def main():
                 query_template,
                 batch_number,
                 total_batches,
-                initial_retry_delay,
-                max_persistent_retries_per_address
+                batch_rate_limit_delay_config,
+                max_persistent_retries_per_address_config
             )
 
             all_results.extend(batch_results)

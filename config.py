@@ -37,16 +37,38 @@ if _config:
     OUTPUT_JSON_FILE = PATHS.get("output_json")
 
     DEFAULT_BATCH_SIZE = 10
-    BATCH_SIZE = SETTINGS.get("batch_size", DEFAULT_BATCH_SIZE) 
-    INITIAL_RETRY_DELAY = SETTINGS.get("initial_retry_delay", 5)
-    MAX_PERSISTENT_RETRIES_PER_ADDRESS = SETTINGS.get("max_persistent_retries_per_address", 50)
+    DEFAULT_BATCH_RATE_LIMIT_DELAY = 5
+    DEFAULT_MAX_PERSISTENT_RETRIES = 50
+    DEFAULT_MAX_REQUEST_TIMEOUT = 45
 
-    _essential_values = [API_URL, ADDRESSES_FILE, PROXIES_FILE, QUERY_FILE, OUTPUT_JSON_FILE]
-    _missing_values = [name for name, value in zip(["API_URL", "ADDRESSES_FILE", "PROXIES_FILE", "QUERY_FILE", "OUTPUT_JSON_FILE"], _essential_values) if value is None]
+    BATCH_SIZE = SETTINGS.get("batch_size", DEFAULT_BATCH_SIZE)
+    BATCH_RATE_LIMIT_DELAY = SETTINGS.get("batch_rate_limit_delay", DEFAULT_BATCH_RATE_LIMIT_DELAY)
+    MAX_PERSISTENT_RETRIES_PER_ADDRESS = SETTINGS.get("max_persistent_retries_per_address", DEFAULT_MAX_PERSISTENT_RETRIES)
+    MAX_REQUEST_TIMEOUT = SETTINGS.get("max_request_timeout", DEFAULT_MAX_REQUEST_TIMEOUT)
 
-    if _missing_values:
-        logging.error(f"Missing essential configuration keys in {CONFIG_FILE_PATH}: {', '.join(_missing_values)}")
+    _essential_paths = [ADDRESSES_FILE, PROXIES_FILE, QUERY_FILE, OUTPUT_JSON_FILE]
+    _missing_paths = [name for name, value in zip(["paths.addresses", "paths.proxies", "paths.query", "paths.output_json"], _essential_paths) if value is None]
+
+    if API_URL is None:
+        _missing_paths.append("api_url")
+
+    if _missing_paths:
+        logging.error(f"Missing essential configuration keys in {CONFIG_FILE_PATH}: {', '.join(_missing_paths)}")
         exit(1)
+
+    for name, value, default in [
+        ("batch_size", BATCH_SIZE, DEFAULT_BATCH_SIZE),
+        ("batch_rate_limit_delay", BATCH_RATE_LIMIT_DELAY, DEFAULT_BATCH_RATE_LIMIT_DELAY),
+        ("max_persistent_retries_per_address", MAX_PERSISTENT_RETRIES_PER_ADDRESS, DEFAULT_MAX_PERSISTENT_RETRIES),
+        ("max_request_timeout", MAX_REQUEST_TIMEOUT, DEFAULT_MAX_REQUEST_TIMEOUT)
+    ]:
+        if not isinstance(value, (int, float)) or value <= 0:
+            logging.warning(f"Invalid or non-positive value for setting '{name}' ({value}). Using default: {default}")
+            if name == "batch_size": BATCH_SIZE = default
+            elif name == "batch_rate_limit_delay": BATCH_RATE_LIMIT_DELAY = default
+            elif name == "max_persistent_retries_per_address": MAX_PERSISTENT_RETRIES_PER_ADDRESS = default
+            elif name == "max_request_timeout": MAX_REQUEST_TIMEOUT = default
+
 else:
     logging.error("Exiting due to configuration loading failure.")
     exit(1)
