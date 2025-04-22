@@ -1,0 +1,12 @@
+api_url: "https://api.zora.co/universal/graphql"
+
+paths:
+  addresses: "data/addresses.txt"
+  proxies: "data/proxies.txt"
+  query: "data/query.graphql"
+  output_json: "data/results.json"
+
+settings:
+  batch_size: 5
+  initial_retry_delay: 5
+  max_persistent_retries_per_address: 50

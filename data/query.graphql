@@ -1,0 +1,10 @@
+query MyQuery {{
+  zoraTokenAllocation(
+    identifierWalletAddresses: "{address}"
+    zoraClaimContractEnv: PRODUCTION
+  ) {{
+    totalTokensEarned {{
+      totalTokens
+    }}
+  }}
+}} 
