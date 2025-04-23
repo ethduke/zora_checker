@@ -16,7 +16,6 @@ class ProxyHandler:
         if not proxy_string:
             return None
         if not proxy_string.startswith("http://") and not proxy_string.startswith("https://"):
-            # Defaulting to http, adjust if your proxies use https
             return f"http://{proxy_string}"
         return proxy_string
 
@@ -33,15 +32,11 @@ class ProxyHandler:
             return None
         
         if self.num_proxies == 1:
-            # Only one proxy, return it formatted
             return self._format_proxy(self.proxies[0])
 
-        # Try to get a different proxy
         new_proxy_string = random.choice(self.proxies)
         new_proxy_url = self._format_proxy(new_proxy_string)
 
-        # If the new one is the same as the current one, try one more time
-        # (reduces chance of immediate reuse but doesn't guarantee it with few proxies)
         if new_proxy_url == current_proxy_url and self.num_proxies > 1:
             new_proxy_string = random.choice(self.proxies)
             new_proxy_url = self._format_proxy(new_proxy_string)
@@ -54,10 +49,9 @@ class ProxyHandler:
         if not proxy_url:
             return "None"
         try:
-            # Find the part after the last '@' or after '//' if no '@'
             if '@' in proxy_url:
                 return proxy_url.split('@')[-1]
             else:
                 return proxy_url.split('//')[-1]
         except Exception:
-            return proxy_url # Fallback in case of unexpected format 
+            return proxy_url 

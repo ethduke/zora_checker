@@ -19,7 +19,6 @@ async def fetch_zora_data(session, address, proxy_handler, query_template, max_r
     while retries <= max_retries:
         proxy_display = proxy_handler.get_display_proxy(current_proxy_url)
         try:
-            # Use configured timeout
             timeout_config = aiohttp.ClientTimeout(total=config.MAX_REQUEST_TIMEOUT)
             async with session.post(config.API_URL, json=payload, headers=headers, proxy=current_proxy_url, timeout=timeout_config) as response:
                 status = response.status
@@ -115,8 +114,7 @@ async def process_results(all_results, output_json_file):
                 error_count += 1
         else:
             if address and isinstance(r, dict) and 'error' in r:
-                # Log specific errors encountered during fetching/batch processing
-                if r.get("error") != "RATE_LIMITED": # Don't double-log rate limits handled by retry
+                if r.get("error") != "RATE_LIMITED": 
                      logging.error(f"Processing failed for {address}: {r.get('error', 'Unknown fetch error')}, Status: {r.get('status', 'N/A')}, Last Proxy: {r.get('last_proxy', 'N/A')}")
             else:
                 logging.error(f"Processing failed for unknown reason or bad result format: {r}")
@@ -125,7 +123,7 @@ async def process_results(all_results, output_json_file):
     logging.info("--- Summary ---")
     logging.info(f"Total addresses processed: {len(all_results)}")
     logging.info(f"Successfully retrieved token data for: {success_count} addresses")
-    logging.info(f"Errors/Timeouts/RateLimits/Missing Data: {error_count}") # Adjusted label
+    logging.info(f"Errors/Timeouts/RateLimits/Missing Data: {error_count}") 
     logging.info(f"Total Tokens Sum from successful results: {total_tokens_sum:.6f}")
 
     try:
@@ -140,18 +138,17 @@ async def process_single_batch(session, batch_addresses, proxy_handler, query_te
     """Processes a single batch of addresses, including initial fetch and persistent retries for rate limits."""
     logging.info(f"Processing Batch {batch_number}/{total_batches} (Addresses {batch_addresses[0]}...{batch_addresses[-1]}) - Size: {len(batch_addresses)}...")
 
-    final_batch_results = {} # Stores final result {address: result_dict} for this batch
-    addresses_to_retry = set(batch_addresses) # Initially, all addresses need to be attempted
+    final_batch_results = {}
+    addresses_to_retry = set(batch_addresses) 
     current_persistent_retry_attempt = 0
 
     while addresses_to_retry and current_persistent_retry_attempt <= max_persistent_retries_per_address:
         if current_persistent_retry_attempt > 0:
-            # It's a retry attempt
             wait_time = random.uniform(1, batch_rate_limit_delay)
             logging.warning(f"Batch {batch_number}: Rate limit hit for {len(addresses_to_retry)} address(es). Retrying (Attempt {current_persistent_retry_attempt}/{max_persistent_retries_per_address}) in {wait_time:.2f} seconds...")
             await asyncio.sleep(wait_time)
 
-        current_batch_addresses = list(addresses_to_retry) # Addresses to process in this attempt
+        current_batch_addresses = list(addresses_to_retry) 
         tasks = []
         task_to_address = {}
         for address in current_batch_addresses:
@@ -173,18 +170,15 @@ async def process_single_batch(session, batch_addresses, proxy_handler, query_te
                     if current_persistent_retry_attempt < max_persistent_retries_per_address:
                          still_needs_retry.add(address)
                     else:
-                         # Max retries reached for this address
                          logging.error(f"Batch {batch_number}: Max persistent retries reached for {address}. Marking as failed.")
                          final_batch_results[address] = {"address": address, "error": "Persistent Rate Limit Max Retries Exceeded", "last_proxy": result.get("last_proxy")}
                 else:
-                    # Success or other error - this address is done for this batch
                     final_batch_results[address] = result
             else:
-                # Should not happen if fetch_zora_data always returns dict or raises
                 logging.error(f"Unexpected result type for address {address}: {type(result)}. Result: {result}")
                 final_batch_results[address] = {"address": address, "error": "Unexpected result type from fetch"}
         
-        addresses_to_retry = still_needs_retry # Update the set for the next loop iteration
+        addresses_to_retry = still_needs_retry 
         current_persistent_retry_attempt += 1
 
     logging.info(f"Batch {batch_number} finished processing.")
@@ -221,8 +215,8 @@ async def main():
     logging.info(f"Using API URL: {api_url}")
     logging.info(f"Total addresses to process: {len(addresses)}")
     logging.info(f"Processing in batches of {batch_size}...")
-    logging.info(f"Request timeout per address: {config.MAX_REQUEST_TIMEOUT}s") # Log new setting
-    logging.info(f"Batch rate limit retry delay upper bound: {batch_rate_limit_delay_config}s") # Log renamed setting
+    logging.info(f"Request timeout per address: {config.MAX_REQUEST_TIMEOUT}s") 
+    logging.info(f"Batch rate limit retry delay upper bound: {batch_rate_limit_delay_config}s")
 
     current_index = 0
     total_batches = (len(addresses) + batch_size - 1) // batch_size
@@ -245,10 +239,8 @@ async def main():
 
             all_results.extend(batch_results)
 
-            # Move to the next batch index
             current_index += len(batch_addresses)
 
-    # Process final results and save to JSON
     await process_results(all_results, output_json_file)
 
 if __name__ == "__main__":

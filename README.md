@@ -1,6 +1,10 @@
 # Zora Token Checker (Unofficial)
 
-This script fetches Zora token allocation data for a list of Ethereum addresses. It uses proxies to handle potential rate limits. **The data might not be perfectly accurate.**
+This script fetches Zora token allocation data for a list of Ethereum addresses. It uses proxies to handle potential rate limits.
+
+## UPDATE
+
+ **The data you're retrieving isn't real—it's just a mockup for educational purposes. This lets you practice interacting with GraphQL and multi-accounts"**
 
 ## How it Works
 
